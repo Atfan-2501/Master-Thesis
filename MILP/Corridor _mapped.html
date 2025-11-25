@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Key Intermodal Corridors in Switzerland</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet.js for interactive maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        /* Set a specific height for the map container */
+        #map { 
+            height: 600px; 
+            border-radius: 0.5rem; /* Match card rounding */
+        }
+        /* Custom Leaflet popup styles for better readability */
+        .leaflet-popup-content-wrapper {
+            background-color: #f9fafb; /* Light gray background */
+            color: #1f2937; /* Darker text */
+            border-radius: 8px;
+        }
+        .leaflet-popup-content {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+        }
+        /* Custom styles for the legend */
+        .legend {
+            padding: 10px;
+            background: white;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            line-height: 18px;
+            color: #333;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.8;
+            border-radius: 50%; /* Make icons circular */
+        }
+        .legend-corridor {
+            width: 18px;
+            height: 3px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.8;
+        }
+    </style>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen p-4" style="font-family: 'Inter', sans-serif;">
+
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-5xl">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Key Short-Distance Intermodal Corridors in Switzerland</h1>
+            <p class="text-gray-600 mt-2">Visualizing the three primary economic regions and freight corridors (< 300 km) for the MILP model.</p>
+        </div>
+        <!-- Map container -->
+        <div id="map" class="shadow-inner"></div>
+    </div>
+
+    <script>
+        // --- 1. Initialize the Map ---
+        // Center the map on Switzerland
+        const map = L.map('map').setView([46.8, 8.2], 8);
+
+        // Add the base tile layer from OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // --- 2. Define Economic Regions (Polygons) ---
+        // These are approximate polygons representing the major economic hubs.
+
+        // Zurich Economic Region
+        const zurichRegion = L.polygon([
+            [47.2, 8.3],
+            [47.5, 8.2],
+            [47.6, 8.9],
+            [47.2, 8.8]
+        ], {color: '#3b82f6', weight: 2, fillOpacity: 0.3}).addTo(map);
+        zurichRegion.bindPopup("<b>Zurich Economic Region</b><br>Switzerland's primary financial and industrial hub.");
+
+        // Lake Geneva (Lemanic) Region
+        const genevaRegion = L.polygon([
+            [46.1, 5.9],
+            [46.6, 6.0],
+            [46.6, 6.9],
+            [46.1, 6.8]
+        ], {color: '#16a34a', weight: 2, fillOpacity: 0.3}).addTo(map);
+        genevaRegion.bindPopup("<b>Lake Geneva Region</b><br>Key center for international trade, technology, and administration.");
+
+        // Basel Trimodal Hub Region
+        const baselRegion = L.polygon([
+            [47.4, 7.4],
+            [47.7, 7.4],
+            [47.7, 7.8],
+            [47.4, 7.8]
+        ], {color: '#ef4444', weight: 2, fillOpacity: 0.3}).addTo(map);
+        baselRegion.bindPopup("<b>Basel Trimodal Hub</b><br>Crucial logistics gateway with Rhine port access (road, rail, water).");
+
+        // --- 3. Define Freight Corridors (Polylines) ---
+        // These lines connect the centers of the economic regions.
+
+        const zurich_coords = [47.3769, 8.5417];
+        const geneva_coords = [46.2044, 6.1432];
+        const basel_coords = [47.5596, 7.5886];
+
+        // Zurich <-> Basel
+        const corridorZB = L.polyline([zurich_coords, basel_coords], {color: '#7c3aed', weight: 4, opacity: 0.8, dashArray: '8, 8'}).addTo(map);
+        corridorZB.bindPopup("<b>Zurich-Basel Corridor</b><br>Approx. 85 km. Key for pharma, chemicals, and consumer goods.");
+
+        // Zurich <-> Geneva
+        const corridorZG = L.polyline([zurich_coords, geneva_coords], {color: '#7c3aed', weight: 4, opacity: 0.8, dashArray: '8, 8'}).addTo(map);
+        corridorZG.bindPopup("<b>Zurich-Geneva Corridor</b><br>Approx. 280 km. Links the two largest economic centers.");
+
+        // Basel <-> Geneva
+        const corridorBG = L.polyline([basel_coords, geneva_coords], {color: '#7c3aed', weight: 4, opacity: 0.8, dashArray: '8, 8'}).addTo(map);
+        corridorBG.bindPopup("<b>Basel-Geneva Corridor</b><br>Approx. 250 km. Connects the western region with the northern logistics hub.");
+
+        // --- 4. Add a Legend ---
+        const legend = L.control({position: 'bottomright'});
+
+        legend.onAdd = function (map) {
+            const div = L.DomUtil.create('div', 'info legend');
+            const regions = [
+                {name: 'Zurich Region', color: '#3b82f6'},
+                {name: 'Geneva Region', color: '#16a34a'},
+                {name: 'Basel Region', color: '#ef4444'}
+            ];
+            
+            div.innerHTML = '<h4>Key Areas</h4>';
+            
+            // Loop through regions and generate a label with a colored square for each.
+            for (let i = 0; i < regions.length; i++) {
+                div.innerHTML +=
+                    '<i style="background:' + regions[i].color + '"></i> ' +
+                    regions[i].name + '<br>';
+            }
+            
+            // Add corridor info
+            div.innerHTML += '<hr class="my-2 border-gray-300">';
+            div.innerHTML += '<h4>Corridors</h4>';
+            div.innerHTML += '<i class="legend-corridor" style="background:' + '#7c3aed' + '"></i> ' + 'Short-Distance Freight';
+
+            return div;
+        };
+
+        legend.addTo(map);
+    </script>
+</body>
+</html>
