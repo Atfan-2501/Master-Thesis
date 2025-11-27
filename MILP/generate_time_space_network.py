@@ -5,40 +5,29 @@ import math
 # CONFIG
 # ============================================================
 
-# Input: connections table (from master / connections generator)
 CONNECTIONS_XLSX = "model_output/connections_generated.xlsx"
-
-# Input: HUPAC timetable
 TIMETABLE_XLSX = "Input Data/HUPAC Timetable.xlsx"
-
-# Output: extended TS subproblem inputs
 OUTPUT_TS_XLSX = "model_output/TS_Subproblem_Inputs_extended.xlsx"
 
-# Time discretization
-NUM_TIME_STEPS = 168          # 168 hours = 1 week
-TIME_STEP_HOURS = 1.0         # 1 hour per step
+NUM_TIME_STEPS = 168
+TIME_STEP_HOURS = 1.0
 
-# Storage: 32 CHF per calendar day, same for all terminals
 STORAGE_COST_DAY_CHF = 32.0
-DWELL_COST_PER_TEU = STORAGE_COST_DAY_CHF * (TIME_STEP_HOURS / 24.0)  # CHF/TEU/step
+DWELL_COST_PER_TEU = STORAGE_COST_DAY_CHF * (TIME_STEP_HOURS / 24.0)
 
-# Yard capacity: 600 m², assume ~25 m² per TEU → ~24 TEU
 TERMINAL_STORAGE_AREA = 600.0
 AREA_M2_PER_TEU = 25.0
 DWELL_CAP_TEU = int(TERMINAL_STORAGE_AREA / AREA_M2_PER_TEU)
 
-# Big-M for entry/exit arcs
 BIG_M_FLOW = 1e6
 
-
 # ============================================================
-# 1. LOAD CONNECTIONS + TIMETABLE
+# 1. LOAD DATA
 # ============================================================
 
 connections = pd.read_excel(CONNECTIONS_XLSX)
 timetable = pd.read_excel(TIMETABLE_XLSX, sheet_name="Worksheet")
 
-# Column aliases for connections
 col_node_i = "Node (i)"
 col_node_j = "Node (j)"
 col_origin = "origin_id"
@@ -49,7 +38,7 @@ col_cap    = "Train length (Standard)"
 col_cfix   = "Train cost(Standard)"
 
 # ============================================================
-# 2. BUILD NODE <-> TERMINAL MAPPING
+# 2. BUILD MAPPINGS
 # ============================================================
 
 node_to_terminal = {}
@@ -58,27 +47,22 @@ for _, row in connections.iterrows():
     nj = int(row[col_node_j])
     oi = row[col_origin]
     dj = row[col_dest]
-
     node_to_terminal.setdefault(ni, oi)
     node_to_terminal.setdefault(nj, dj)
 
 node_ids = sorted(node_to_terminal.keys())
 terminal_to_node = {name: idx for idx, name in node_to_terminal.items()}
 
-# Distinct ODs with intermodal connections
 conn_ods = connections[[col_origin, col_dest]].drop_duplicates()
-conn_ods = conn_ods.rename(columns={col_origin: "origin_id",
-                                    col_dest: "destination_id"})
+conn_ods = conn_ods.rename(columns={col_origin: "origin_id", col_dest: "destination_id"})
 conn_ods["od_id"] = conn_ods["origin_id"] + "-" + conn_ods["destination_id"]
 
-
 # ============================================================
-# 3. TS_Nodes: terminal-time nodes + OD source/sink nodes
+# 3. TS_NODES
 # ============================================================
 
 ts_nodes_rows = []
 
-# Terminal-time nodes
 for n in node_ids:
     term_name = node_to_terminal[n]
     for t in range(NUM_TIME_STEPS):
@@ -90,14 +74,11 @@ for n in node_ids:
             "node_type": "terminal_time",
         })
 
-# OD-specific source/sink nodes
 for _, row in conn_ods.iterrows():
     origin = row["origin_id"]
     dest   = row["destination_id"]
-
     source_id = f"OD_{origin}_{dest}_source"
     sink_id   = f"OD_{origin}_{dest}_sink"
-
     ts_nodes_rows.append({
         "node_id": source_id,
         "terminal_id": origin,
@@ -115,37 +96,35 @@ for _, row in conn_ods.iterrows():
 
 ts_nodes = pd.DataFrame(ts_nodes_rows)
 
-
 # ============================================================
-# 4. TS_Arcs: train arcs from timetable + dwell arcs
+# 4. TS_ARCS - TRAIN ARCS (FIXED)
 # ============================================================
 
 ts_arcs_rows = []
-
 day_cols = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 day_index = {d: i for i, d in enumerate(day_cols)}
 
-# --- Train arcs from timetable ---
 for _, conn in connections.iterrows():
     origin = conn[col_origin]
     dest   = conn[col_dest]
     node_i = int(conn[col_node_i])
     node_j = int(conn[col_node_j])
 
-    travel_steps = int(conn[col_ttime])          # from master (already ceil)
+    travel_steps = int(conn[col_ttime])
     c_var = float(conn[col_cvar])
     cap   = float(conn[col_cap])
     c_fix = float(conn[col_cfix])
 
+    # ✅ FIX: Group ID based on ACTUAL node direction
     group_id = f"{origin}-{dest}_IM"
 
-    # match timetable by full names
+    # Match timetable: departure FROM origin TO dest
     mask = ((timetable["Departure term desc."] == origin) &
             (timetable["Arrival terminal desc."] == dest))
     tt_rows = timetable[mask]
 
     if tt_rows.empty:
-        # fallback: one generic departure per day at 12:00
+        # Fallback: one train per day at noon
         for d_idx in range(7):
             h = 12
             m = 0
@@ -169,9 +148,8 @@ for _, conn in connections.iterrows():
                 "group_id": group_id,
                 "fixed_cost_chf_per_arc": c_fix,
             })
-
     else:
-        # real HUPAC schedule: use days marked 'X'
+        # Real timetable
         for _, tt in tt_rows.iterrows():
             closing_str = tt["Closing time"]
             if pd.isna(closing_str):
@@ -205,7 +183,10 @@ for _, conn in connections.iterrows():
                         "fixed_cost_chf_per_arc": c_fix,
                     })
 
-# --- Dwell arcs with storage cost & finite capacity ---
+# ============================================================
+# 5. DWELL ARCS
+# ============================================================
+
 for n in node_ids:
     for t in range(NUM_TIME_STEPS - 1):
         from_node_id = f"Node{int(n)}_t{t}"
@@ -225,12 +206,11 @@ for n in node_ids:
 
 ts_arcs = pd.DataFrame(ts_arcs_rows)
 
-
 # ============================================================
-# 5. EARLIEST / LATEST TIMES PER OD (from train arcs)
+# 6. TIME WINDOWS PER OD
 # ============================================================
 
-timeinfo = {}   # group_id → {earliest_dep, earliest_arr, latest_arr}
+timeinfo = {}
 
 for _, r in ts_arcs[ts_arcs["arc_type"] == "train"].iterrows():
     g = r["group_id"]
@@ -250,9 +230,8 @@ for _, r in ts_arcs[ts_arcs["arc_type"] == "train"].iterrows():
         timeinfo[g]["earliest_arr"] = min(timeinfo[g]["earliest_arr"], to_t)
         timeinfo[g]["latest_arr"]   = max(timeinfo[g]["latest_arr"], to_t)
 
-
 # ============================================================
-# 6. ENTRY/EXIT ARCS (option A) + OD time windows
+# 7. ENTRY/EXIT ARCS
 # ============================================================
 
 od_entry_rows = []
@@ -267,7 +246,6 @@ for _, row in conn_ods.iterrows():
 
     info = timeinfo.get(group_id, None)
     if info is None:
-        # Fallback: whole horizon
         earliest_dep = 0
         earliest_arr = 0
         latest_arr   = NUM_TIME_STEPS - 1
@@ -282,7 +260,7 @@ for _, row in conn_ods.iterrows():
     origin_idx = terminal_to_node[origin]
     dest_idx   = terminal_to_node[dest]
 
-    # --- Entry arcs: source -> Node(origin)_t  for all t <= earliest_dep
+    # Entry arcs
     for t in range(0, earliest_dep + 1):
         entry_arc_id = f"entry_{origin}_{dest}_t{t}"
         ts_arcs_rows.append({
@@ -302,7 +280,7 @@ for _, row in conn_ods.iterrows():
             "entry_arc_id": entry_arc_id,
         })
 
-    # --- Exit arcs: Node(dest)_t -> sink  for all t >= earliest_arr
+    # Exit arcs
     for t in range(earliest_arr, NUM_TIME_STEPS):
         exit_arc_id = f"exit_{origin}_{dest}_t{t}"
         ts_arcs_rows.append({
@@ -322,7 +300,6 @@ for _, row in conn_ods.iterrows():
             "exit_arc_id": exit_arc_id,
         })
 
-    # record OD time window
     od_timewin_rows.append({
         "origin_id": origin,
         "destination_id": dest,
@@ -332,15 +309,13 @@ for _, row in conn_ods.iterrows():
         "latest_arr_t": latest_arr,
     })
 
-# rebuild ts_arcs after adding entry/exit arcs
 ts_arcs = pd.DataFrame(ts_arcs_rows)
 od_entry_arcs = pd.DataFrame(od_entry_rows)
 od_exit_arcs  = pd.DataFrame(od_exit_rows)
 ts_od_timewindows = pd.DataFrame(od_timewin_rows)
 
-
 # ============================================================
-# 7. TRAIN_GROUPS + GLOBAL PARAMS
+# 8. TRAIN GROUPS
 # ============================================================
 
 cap_per_od = (connections
@@ -372,9 +347,22 @@ ts_globals = pd.DataFrame({
     ],
 })
 
+# ============================================================
+# 9. DIAGNOSTIC OUTPUT
+# ============================================================
+
+print("\n=== TRAIN ARC GROUP ASSIGNMENT VERIFICATION ===")
+train_arc_groups = ts_arcs[ts_arcs["arc_type"] == "train"].groupby("group_id").agg({
+    "arc_id": "count",
+    "from_node": lambda x: set(n.split("_")[0] for n in x),
+    "to_node": lambda x: set(n.split("_")[0] for n in x)
+}).reset_index()
+
+train_arc_groups.columns = ["group_id", "num_arcs", "from_nodes", "to_nodes"]
+print(train_arc_groups.to_string())
 
 # ============================================================
-# 8. WRITE OUTPUT
+# 10. WRITE OUTPUT
 # ============================================================
 
 with pd.ExcelWriter(OUTPUT_TS_XLSX, engine="xlsxwriter") as writer:
@@ -386,6 +374,6 @@ with pd.ExcelWriter(OUTPUT_TS_XLSX, engine="xlsxwriter") as writer:
     ts_od_timewindows.to_excel(writer, sheet_name="TS_OD_TimeWindows", index=False)
     ts_globals.to_excel(writer, sheet_name="TS_Global_Params", index=False)
 
-print(f"Time-space network written to {OUTPUT_TS_XLSX}")
+print(f"\nTime-space network written to {OUTPUT_TS_XLSX}")
 print(f"TS_Nodes: {len(ts_nodes)} rows")
 print(f"TS_Arcs:  {len(ts_arcs)} rows")

@@ -1,38 +1,45 @@
 import pandas as pd
 import math
+import sys
+import io
 
 # ============================================================
 # CONFIG
 # ============================================================
 
 # Path to your master input file (with OD_Mode_Params)
-MASTER_XLSX = "Input Data/master_problem_inputs_with_taste_draws.xlsx"  # or master_problem_inputs_template.xlsx
+MASTER_XLSX = "Input Data/master_problem_inputs_with_taste_draws.xlsx"
 
 # Output connections file (Excel)
 OUTPUT_CONNECTIONS_XLSX = "model_output/connections_generated.xlsx"
 
 # Time discretization: hours per time step in the TS network
-TIME_STEP_HOURS = 1.0  # e.g. 1 hour per step; change if you want coarser time steps
+TIME_STEP_HOURS = 1.0
 
+# Fix Unicode output for Windows
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # ============================================================
 # 1. LOAD MASTER DATA
 # ============================================================
 
-xls = pd.ExcelFile(MASTER_XLSX)
-od_mode = pd.read_excel(MASTER_XLSX, sheet_name="OD_Mode_Params")
+try:
+    xls = pd.ExcelFile(MASTER_XLSX)
+    od_mode = pd.read_excel(MASTER_XLSX, sheet_name="OD_Mode_Params")
+except Exception as e:
+    print(f"ERROR: Failed to load master data: {e}")
+    sys.exit(1)
 
 # Use only Intermodal rows for rail connections
 im = od_mode[od_mode["mode_id"] == "Intermodal"].copy()
 
 if im.empty:
-    raise RuntimeError(
-        "No Intermodal rows found in OD_Mode_Params. "
-        "Check the mode_id values and that Intermodal is defined."
-    )
+    print("ERROR: No Intermodal rows found in OD_Mode_Params.")
+    print("Check the mode_id values and that Intermodal is defined.")
+    sys.exit(1)
 
 # ============================================================
-# 2. BUILD TERMINAL → NODE-ID MAPPING
+# 2. BUILD TERMINAL -> NODE-ID MAPPING
 # ============================================================
 
 # Get all terminals that appear in Intermodal ODs
@@ -41,7 +48,7 @@ terminals = sorted(set(im["origin_id"].tolist()) | set(im["destination_id"].toli
 # 1-based integer IDs like Maxime's Node indices
 term_to_node = {term: idx + 1 for idx, term in enumerate(terminals)}
 
-print("Terminal → node mapping:")
+print("Terminal to node mapping:")
 for t, nid in term_to_node.items():
     print(f"  {t} -> {nid}")
 
@@ -59,7 +66,6 @@ for _, row in im.iterrows():
     node_j = term_to_node[dest]
 
     # --- Transport time in time steps (ceil) ---
-    # t_hours (continuous) → transport time in TS steps (integer)
     t_hours = float(row["t_hours"])
     t_steps = max(1, math.ceil(t_hours / TIME_STEP_HOURS))
 
@@ -87,10 +93,13 @@ connections_df = connections_df.sort_values(["Node (i)", "Node (j)"]).reset_inde
 print("\nGenerated connections table preview:")
 print(connections_df.head())
 
-
 # ============================================================
 # 4. WRITE TO EXCEL
 # ============================================================
 
-connections_df.to_excel(OUTPUT_CONNECTIONS_XLSX, index=False)
-print(f"\nWrote connections table to {OUTPUT_CONNECTIONS_XLSX}")
+try:
+    connections_df.to_excel(OUTPUT_CONNECTIONS_XLSX, index=False)
+    print(f"\nWrote connections table to {OUTPUT_CONNECTIONS_XLSX}")
+except Exception as e:
+    print(f"ERROR: Failed to write connections file: {e}")
+    sys.exit(1)
