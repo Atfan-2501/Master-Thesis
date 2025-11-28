@@ -203,65 +203,97 @@ class BendersDecomposition:
     # ============================================================
     def generate_proper_optimality_cut(self, master_solution, dual_info, sp_cost):
         """
-        Generate proper dual-based optimality cut:
-        
-        θ ≥ α₀ + Σᵢ πᵢ yᵢ + Σⱼ μⱼ fⱼ
-        
-        where:
-        - α₀ is the constant term
-        - πᵢ are dual values for flow variables
-        - μⱼ are dual values for frequency variables
-        """
-        print("Generating proper dual-based optimality cut...")
+        Generate an optimality cut for θ.
 
+        If dual extraction worked, use:
+            θ ≥ α₀ + Σ π_od y_od + Σ μ_od f_od
+
+        If dual extraction failed or is obviously weak, fall back to:
+            θ ≥ α * Z_TS
+
+        where Z_TS = sp_cost and α ∈ (0,1], e.g. α = 0.95.
+        """
+        print("Generating optimality cut...")
+
+        # ------------------------------------------------------------------
+        # 0) Decide whether dual info is usable
+        # ------------------------------------------------------------------
+        dual_ok = dual_info.get("extraction_successful", False)
+        flow_coeffs_raw = dual_info.get("flow_coefficients", {}) or {}
+        freq_coeffs_raw = dual_info.get("frequency_coefficients", {}) or {}
+
+        # Heuristic: even if extraction_successful=True but there are no coeffs,
+        # we treat it as unusable for Benders purposes.
+        if dual_ok and (len(flow_coeffs_raw) == 0 and len(freq_coeffs_raw) == 0):
+            dual_ok = False
+
+        # ------------------------------------------------------------------
+        # 1) Initialize cut_data
+        # ------------------------------------------------------------------
         cut_data = {
             "iteration": self.iteration,
             "cut_type": "optimality",
             "subproblem_cost": float(sp_cost),
             "timestamp": datetime.now().isoformat(),
-            
-            # Dual coefficients
-            "constant_term": dual_info.get('constant_term', sp_cost),
             "flow_coefficients": {},
             "frequency_coefficients": {},
-            
-            # Metadata
-            "num_ods": dual_info.get('num_ods', 0),
-            "objective_value": dual_info.get('objective_value', sp_cost)
+            "num_ods": dual_info.get("num_ods", 0),
+            "objective_value": dual_info.get("objective_value", sp_cost),
+            "dual_extraction_used": dual_ok,
         }
 
-        # Extract flow coefficients (πᵢ)
-        flow_coeffs = dual_info.get('flow_coefficients', {})
-        for od, coeff in flow_coeffs.items():
-            cut_data["flow_coefficients"][f"{od[0]}_{od[1]}"] = float(coeff)
+        # ------------------------------------------------------------------
+        # 2A) Fallback: constant cut θ ≥ α * Z_TS
+        # ------------------------------------------------------------------
+        if not dual_ok:
+            alpha = 0.95  # can tune; ensures θ is a *lower* bound on Z_TS
+            alpha_0 = alpha * float(sp_cost)
 
-        # Extract frequency coefficients (μⱼ)
-        freq_coeffs = dual_info.get('frequency_coefficients', {})
-        for od, coeff in freq_coeffs.items():
-            cut_data["frequency_coefficients"][f"{od[0]}_{od[1]}"] = float(coeff)
+            cut_data["constant_term"] = alpha_0
+            cut_data["cut_value_at_current"] = alpha_0
+            cut_data["expected_gap"] = abs(alpha_0 - float(sp_cost))
 
-        # Compute expected cut strength
-        # Cut value at current point should equal sp_cost
-        alpha_0 = cut_data["constant_term"]
-        cut_value_at_current = alpha_0
-        
-        for od, data in master_solution['intermodal_flows'].items():
-            od_key = f"{od[0]}_{od[1]}"
-            pi = cut_data["flow_coefficients"].get(od_key, 0.0)
-            mu = cut_data["frequency_coefficients"].get(od_key, 0.0)
-            
-            cut_value_at_current += pi * data['flow'] + mu * data['frequency']
+            print("   ⚠️  Duals unavailable or weak -> using constant cut")
+            print(f"   Cut: θ ≥ {alpha_0:.2f} ≈ {alpha:.2f} · Z_TS")
 
-        cut_data["cut_value_at_current"] = cut_value_at_current
-        cut_data["expected_gap"] = abs(cut_value_at_current - sp_cost)
+        # ------------------------------------------------------------------
+        # 2B) Dual-based cut (if/when duals are valid)
+        # ------------------------------------------------------------------
+        else:
+            # Use dual_info's constant_term if provided, otherwise back-calc
+            alpha_0 = float(dual_info.get("constant_term", sp_cost))
+            cut_data["constant_term"] = alpha_0
 
-        print(f"   Cut: θ ≥ {alpha_0:.2f} + Σπᵢyᵢ + Σμⱼfⱼ")
-        print(f"   At current point: {cut_value_at_current:.2f} (expected: {sp_cost:.2f})")
-        print(f"   Gap: {cut_data['expected_gap']:.4f}")
+            # Map (o,d) → "o_d" keys for storage
+            for od, coeff in flow_coeffs_raw.items():
+                cut_data["flow_coefficients"][f"{od[0]}_{od[1]}"] = float(coeff)
 
-        if cut_data["expected_gap"] > 1.0:
-            print(f"   ⚠️  Warning: Large cut gap - check dual extraction")
+            for od, coeff in freq_coeffs_raw.items():
+                cut_data["frequency_coefficients"][f"{od[0]}_{od[1]}"] = float(coeff)
 
+            cut_value_at_current = alpha_0
+
+            for od, data in master_solution["intermodal_flows"].items():
+                od_key = f"{od[0]}_{od[1]}"
+                pi = cut_data["flow_coefficients"].get(od_key, 0.0)
+                mu = cut_data["frequency_coefficients"].get(od_key, 0.0)
+
+                cut_value_at_current += pi * data["flow"] + mu * data["frequency"]
+
+            cut_data["cut_value_at_current"] = cut_value_at_current
+            cut_data["expected_gap"] = abs(cut_value_at_current - float(sp_cost))
+
+            print(
+                f"   Cut: θ ≥ {alpha_0:.2f} + Σπ_od y_od + Σμ_od f_od "
+                f"(value @ current: {cut_value_at_current:.2f}, Z_TS={sp_cost:.2f})"
+            )
+
+            if cut_data["expected_gap"] > 1.0:
+                print("   ⚠️  Warning: Large cut gap - check dual extraction")
+
+        # ------------------------------------------------------------------
+        # 3) Store cut
+        # ------------------------------------------------------------------
         self.save_benders_cut(cut_data)
         self.optimality_cuts_added += 1
 

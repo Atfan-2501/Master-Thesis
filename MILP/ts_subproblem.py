@@ -133,6 +133,10 @@ def solve_ts_subproblem(master_solution):
 
     m.TS_Obj = Objective(rule=ts_cost_expr, sense=minimize)
 
+    # Enable duals from the solver
+    if not hasattr(m, "dual"):
+        m.dual = Suffix(direction=Suffix.IMPORT)
+
     # Solve with dual information
     solver = SolverFactory("gurobi")
     solver.options['QCPDual'] = 1  # Enable dual information
@@ -165,77 +169,66 @@ def solve_ts_subproblem(master_solution):
 
 def extract_dual_information(model, results):
     """
-    Extract dual information for optimality cuts.
-    
+    Extract dual information for optimality cuts using Pyomo's dual suffix.
+
     Returns dual values for:
-    1. Group capacity constraints (θ = α₀ + Σ πᵢ yᵢ + Σ μⱼ fⱼ)
-    2. Node balance constraints (for flow requirements)
+    1. NodeBalance source constraints  -> flow_coefficients π_od (w.r.t. y_req)
+    2. GroupCapacity constraints      -> frequency_coefficients μ_od (w.r.t. f_lev)
     """
     dual_info = {
-        'constant_term': 0.0,
-        'flow_coefficients': {},
-        'frequency_coefficients': {},
-        'constraint_details': {},
-        'extraction_method': 'unknown',
-        'extraction_successful': False
+        "constant_term": 0.0,
+        "flow_coefficients": {},
+        "frequency_coefficients": {},
+        "constraint_details": {},
+        "extraction_method": "pyomo_dual_suffix",
+        "extraction_successful": False,
     }
-    
+
     try:
-        # Method 1: Try Pyomo's dual suffix
-        if hasattr(model, 'dual'):
-            dual_info['extraction_method'] = 'pyomo_dual_suffix'
-            success = extract_duals_via_suffix(model, dual_info)
-            if success:
-                dual_info['extraction_successful'] = True
-                print(f"   ✓ Dual extraction via Pyomo suffix successful")
-        
-        # Method 2: Try accessing Gurobi model directly
-        elif not dual_info['extraction_successful']:
-            dual_info['extraction_method'] = 'gurobi_direct'
-            success = extract_duals_via_gurobi(model, dual_info)
-            if success:
-                dual_info['extraction_successful'] = True
-                print(f"   ✓ Dual extraction via Gurobi direct access successful")
-        
-        # Method 3: Results object
-        if not dual_info['extraction_successful']:
-            dual_info['extraction_method'] = 'results_object'
-            success = extract_duals_via_results(model, results, dual_info)
-            if success:
-                dual_info['extraction_successful'] = True
-                print(f"   ✓ Dual extraction via results object successful")
-        
-        # If we got duals, compute constant term
-        if dual_info['extraction_successful']:
-            current_cost = value(model.TS_Obj)
-            
-            flow_term = sum(
-                dual_info['flow_coefficients'].get((o, d), 0.0) * value(model.y_req[o, d])
-                for (o, d) in model.OD
-            )
-            
-            freq_term = sum(
-                dual_info['frequency_coefficients'].get((o, d), 0.0) * value(model.f_lev[o, d])
-                for (o, d) in model.OD
-            )
-            
-            dual_info['constant_term'] = current_cost - flow_term - freq_term
-            dual_info['objective_value'] = current_cost
-            dual_info['num_ods'] = len(model.OD)
-            
-            print(f"   Dual summary: α₀={dual_info['constant_term']:.2f}, "
-                  f"{len(dual_info['flow_coefficients'])} flow coeffs, "
-                  f"{len(dual_info['frequency_coefficients'])} freq coeffs")
-        else:
-            print(f"   ⚠️  All dual extraction methods failed")
-            print(f"   Returning zeros - cut will be weak")
-        
+        # We assume model.dual was created BEFORE solve_ts_subproblem called solver.solve
+        if not hasattr(model, "dual"):
+            print("   ⚠️  No dual suffix on model - cannot extract duals")
+            return dual_info
+
+        # Use the existing helper which reads model.dual[constraint]
+        success = extract_duals_via_suffix(model, dual_info)
+
+        if not success:
+            print("   ⚠️  Dual extraction via Pyomo suffix failed or returned no duals")
+            return dual_info
+
+        # Compute constant term α₀ so that:
+        #   θ ≥ α₀ + Σ π_od y_req_od + Σ μ_od f_lev_od
+        # reproduces current TS objective at the current (y,f)
+        current_cost = value(model.TS_Obj)
+
+        flow_term = sum(
+            dual_info["flow_coefficients"].get((o, d), 0.0) * value(model.y_req[o, d])
+            for (o, d) in model.OD
+        )
+
+        freq_term = sum(
+            dual_info["frequency_coefficients"].get((o, d), 0.0) * value(model.f_lev[o, d])
+            for (o, d) in model.OD
+        )
+
+        dual_info["constant_term"] = current_cost - flow_term - freq_term
+        dual_info["objective_value"] = current_cost
+        dual_info["num_ods"] = len(model.OD)
+        dual_info["extraction_successful"] = True
+
+        print(
+            f"   Dual summary: α₀={dual_info['constant_term']:.2f}, "
+            f"{len(dual_info['flow_coefficients'])} flow coeffs, "
+            f"{len(dual_info['frequency_coefficients'])} freq coeffs"
+        )
+
     except Exception as e:
         print(f"⚠️  Exception during dual extraction: {e}")
         import traceback
         traceback.print_exc()
-        dual_info['extraction_successful'] = False
-    
+        dual_info["extraction_successful"] = False
+
     return dual_info
 
 
