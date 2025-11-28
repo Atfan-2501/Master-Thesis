@@ -1,0 +1,9 @@
+parameter,value
+cost_mean,-0.2
+cost_std,0.1
+time_mean,-0.05
+time_std,0.02
+freq_mean,-0.2
+freq_std,0.05
+ASC_Road,-0.3
+ASC_Other,-4.0
