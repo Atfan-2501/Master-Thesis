@@ -100,10 +100,13 @@ class BendersDecomposition:
         master_solution = self.extract_master_solution()
 
         obj_value = value(self.master_model.OBJ)
-        self.lower_bound = max(self.lower_bound, obj_value)
 
-        print(f"Master objective: {obj_value:.2f}")
+        # Master is a relaxation → gives an UPPER bound for a maximization problem
+        self.upper_bound = min(self.upper_bound, obj_value)
+
+        print(f"Master objective (relaxed): {obj_value:.2f}")
         print(f"Current bounds: LB={self.lower_bound:.2f}, UB={self.upper_bound:.2f}")
+
 
         df = self.master_solution_to_df()
         df.to_excel(self.master_sol_file, index=False)
@@ -180,12 +183,16 @@ class BendersDecomposition:
             else 0.0
         )
 
-        true_obj = master_obj + (sp_obj - theta_value)
-        self.upper_bound = min(self.upper_bound, true_obj)
+        # True profit = (revenue - op_cost - theta) + (theta - Z_TS)
+        true_obj = master_obj + theta_value - sp_obj
 
-        print(f"Subproblem cost: {sp_obj:.2f}")
-        print(f"True objective: {true_obj:.2f}")
+        # For a maximization problem, this is a LOWER bound on the optimal profit
+        self.lower_bound = max(self.lower_bound, true_obj)
+
+        print(f"Subproblem cost (TS routing): {sp_obj:.2f}")
+        print(f"True profit at current solution: {true_obj:.2f}")
         print(f"Current bounds: LB={self.lower_bound:.2f}, UB={self.upper_bound:.2f}")
+
 
         self.generate_proper_optimality_cut(master_solution, info, sp_obj)
 
