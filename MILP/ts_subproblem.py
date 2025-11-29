@@ -138,7 +138,8 @@ def solve_ts_subproblem(master_solution):
         m.dual = Suffix(direction=Suffix.IMPORT)
 
     # Solve with dual information
-    solver = SolverFactory("gurobi")
+    solver = SolverFactory("gurobi_persistent")
+    solver.set_instance(m)
     solver.options['QCPDual'] = 1  # Enable dual information
     results = solver.solve(m, tee=False, load_solutions=True)
 

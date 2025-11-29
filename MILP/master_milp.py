@@ -95,6 +95,15 @@ def build_master_problem():
     m.beta_freq = Param(m.R, initialize=lambda mod, r: beta_freq_map[int(r)])
     m.bigM = Param(initialize=big_M_utility)
 
+
+    # MIN_TEU_IM = 10.0
+
+    # def min_teu_im_init(mod, o, d):
+    #     total_demand = mod.Demand[o, d]  # if you have this param
+    #     return min(MIN_TEU_IM, total_demand)  # don't force more than exists
+
+    # m.MinTEU_IM = Param(m.OD,initialize=min_teu_im_init,within=NonNegativeReals)
+
     # Variables
     m.x = Var(m.OD, m.MODES, domain=Binary)
     m.f = Var(m.OD, m.MODES, domain=NonNegativeReals)
@@ -150,6 +159,21 @@ def build_master_problem():
     def choice_norm_rule(mod, o, d, r):
         return sum(mod.w[o, d, r, mo] for mo in mod.MODES) == 1
     m.ChoiceNormalization = Constraint(m.OD, m.R, rule=choice_norm_rule)
+
+    # Minimum flow if a mode is open (to avoid x=1, y=0)
+    epsilon_f = 1e-3  # or 0.1 TEU if you're in whole-container units
+
+    def min_use_if_open_rule(mod, o, d, mo):
+        return mod.f[o, d, mo] >= epsilon_f * mod.x[o, d, mo]
+
+    m.MinUseIfOpen = Constraint(m.OD, m.MODES, rule=min_use_if_open_rule)
+
+    # def min_im_flow_if_open_rule(mod, o, d):
+    #     if ("Intermodal" not in mod.MODES):
+    #         return Constraint.Skip
+    #     return mod.y[o, d, "Intermodal"] >= mod.MinTEU_IM[o, d] * mod.x[o, d, "Intermodal"]
+
+    # m.MinIMFlowIfOpen = Constraint(m.OD, rule=min_im_flow_if_open_rule)
 
     # --- Argmax linearization ---
     def argmax_rule(mod, o, d, r, mo1, mo2):
