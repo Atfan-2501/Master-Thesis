@@ -12,6 +12,7 @@ class BendersDecomposition:
     def __init__(self, clean_start=True):
         self.master_model = None
         self.iteration = 0
+        self.last_logged_iteration = 0
         self.max_iterations = 50
         self.tolerance = 1e-4
         self.upper_bound = float("inf")
@@ -34,6 +35,12 @@ class BendersDecomposition:
         # Clean previous run artifacts if requested
         if clean_start:
             self.clean_previous_run()
+
+    def _get_model_stats(self, model):
+        """Return (#variables, #constraints) for a Pyomo model."""
+        n_vars = sum(1 for _ in model.component_data_objects(Var, active=True))
+        n_cons = sum(1 for _ in model.component_data_objects(Constraint, active=True))
+        return n_vars, n_cons
 
     # ============================================================
     # 0) Clean start
@@ -93,12 +100,20 @@ class BendersDecomposition:
         if add_cuts and self.iteration > 1:
             self.add_benders_cuts_to_master()
 
+        # --- NEW: number of OD pairs (same each iteration, but recorded here) ---
+        try:
+            self.current_num_od_pairs = len(list(self.master_model.OD))
+        except Exception:
+            self.current_num_od_pairs = 0
+
         master_result = solve_master(self.master_model)
         if master_result is None:
             raise RuntimeError("Master problem failed to solve")
 
-        master_solution = self.extract_master_solution()
+        # --- NEW: master model size after cuts have been added ---
+        self.current_master_nvars, self.current_master_ncons = self._get_model_stats(self.master_model)
 
+        master_solution = self.extract_master_solution()
         obj_value = value(self.master_model.OBJ)
 
         # Master is a relaxation → gives an UPPER bound for a maximization problem
@@ -107,12 +122,12 @@ class BendersDecomposition:
         print(f"Master objective (relaxed): {obj_value:.2f}")
         print(f"Current bounds: LB={self.lower_bound:.2f}, UB={self.upper_bound:.2f}")
 
-
         df = self.master_solution_to_df()
         df.to_excel(self.master_sol_file, index=False)
         print(f"✓ Master solution written to {self.master_sol_file}")
 
         return master_solution
+
 
     def master_solution_to_df(self):
         """Convert master solution to DataFrame"""
@@ -162,6 +177,11 @@ class BendersDecomposition:
         else:
             sp_obj, info = subproblem_result
             sp_model = None
+
+        if sp_model is not None:
+            self.current_sub_nvars, self.current_sub_ncons = self._get_model_stats(sp_model)
+        else:
+            self.current_sub_nvars, self.current_sub_ncons = 0, 0
 
         # Check if this is infeasibility info or dual info
         if info.get('type') == 'infeasibility' or info.get('type') == 'infeasibility_heuristic':
@@ -572,25 +592,59 @@ class BendersDecomposition:
     # Convergence check (unchanged)
     # ============================================================
     def check_convergence(self):
-        """Check if Benders loop has converged"""
-        if self.upper_bound == float("inf") or self.lower_bound == float("-inf"):
-            return False
+        """Check if Benders loop has converged and log this iteration."""
 
-        gap = self.upper_bound - self.lower_bound
-        relative_gap = abs(gap) / (abs(self.upper_bound) + 1e-10)
+        # -----------------------------------------
+        # 1) Compute gap if bounds are finite
+        # -----------------------------------------
+        gap = None
+        relative_gap = None
+        converged = False
 
-        self.convergence_data.append({
-            "iteration": self.iteration,
-            "lower_bound": self.lower_bound,
-            "upper_bound": self.upper_bound,
-            "gap": gap,
-            "relative_gap": relative_gap,
-            "optimality_cuts": self.optimality_cuts_added,
-            "feasibility_cuts": self.feasibility_cuts_added,
-        })
+        finite_bounds = (
+            self.upper_bound != float("inf")
+            and self.lower_bound != float("-inf")
+        )
 
-        print(f"Convergence check: Gap = {gap:.2f}, RelGap = {relative_gap:.4f}")
-        return relative_gap < self.tolerance
+        if finite_bounds:
+            gap = self.upper_bound - self.lower_bound
+            relative_gap = abs(gap) / (abs(self.upper_bound) + 1e-10)
+            converged = relative_gap < self.tolerance
+
+        # -----------------------------------------
+        # 2) Log this iteration ONCE
+        # -----------------------------------------
+        if self.iteration != self.last_logged_iteration:
+            self.convergence_data.append({
+                "iteration": self.iteration,
+                "lower_bound": self.lower_bound,
+                "upper_bound": self.upper_bound,
+                "gap": gap,
+                "relative_gap": relative_gap,
+                "optimality_cuts": self.optimality_cuts_added,
+                "feasibility_cuts": self.feasibility_cuts_added,
+                "master_time_sec": self.current_master_time,
+                "subproblem_time_sec": self.current_subproblem_time,
+                "iteration_time_sec": self.current_iteration_time,
+                "master_nvars": self.current_master_nvars,
+                "master_ncons": self.current_master_ncons,
+                "sub_nvars": self.current_sub_nvars,
+                "sub_ncons": self.current_sub_ncons,
+                "num_od_pairs": self.current_num_od_pairs
+            })
+            self.last_logged_iteration = self.iteration
+
+        # -----------------------------------------
+        # 3) Console output
+        # -----------------------------------------
+        if finite_bounds:
+            print(f"Convergence check: Gap = {gap:.2f}, RelGap = {relative_gap:.4f}")
+        else:
+            print("Convergence check: bounds not finite yet "
+                  f"(LB={self.lower_bound}, UB={self.upper_bound})")
+
+        return converged
+
 
     # ============================================================
     # Main loop (unchanged)
@@ -610,8 +664,20 @@ class BendersDecomposition:
             print(f"{'='*60}")
 
             try:
+                iter_start = time.time()
+
+                # --- NEW: time master solve ---
+                t0 = time.time()
                 master_solution = self.solve_master_problem()
+                self.current_master_time = time.time() - t0
+
+                # --- NEW: time subproblem solve ---
+                t1 = time.time()
                 subproblem_result = self.solve_subproblem(master_solution)
+                self.current_subproblem_time = time.time() - t1
+
+                # --- NEW: total iteration time ---
+                self.current_iteration_time = time.time() - iter_start
 
                 if subproblem_result is None:
                     if self.check_convergence():

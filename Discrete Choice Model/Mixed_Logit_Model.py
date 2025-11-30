@@ -20,9 +20,9 @@ np.random.seed(RANDOM_SEED)
 # ============================================================
 
 print("Loading data...")
-df_wide = pd.read_csv("Discrete Choice Model/model_inputs/synthetic_responses_intermodal_CH_100.csv")
-core = pd.read_csv("Discrete Choice Model/model_inputs/sp_core_design_blocks.csv")
-checks = pd.read_csv("Discrete Choice Model/model_inputs/sp_checks_design.csv")
+df_wide = pd.read_csv("model_inputs/synthetic_responses_intermodal_CH_100.csv")
+core = pd.read_csv("model_inputs/sp_core_design_blocks.csv")
+checks = pd.read_csv("model_inputs/sp_checks_design.csv")
 
 sp_cols = [c for c in df_wide.columns if c.startswith("SP_Task")]
 df_wide = df_wide.copy()
@@ -370,7 +370,7 @@ params_df = pd.DataFrame({
     "value": [
         mu_cost, sigma_cost,
         mu_time, sigma_time,
-        mu_cost, sigma_freq,
+        mu_freq, sigma_freq,
         asc_road, asc_other
     ]
 })
@@ -399,3 +399,43 @@ print("IMPORTANT: Update the Taste_Draws sheet in")
 print("'master_problem_inputs_with_taste_draws.xlsx'")
 print("with the generated taste_draws CSV file")
 print("="*60)
+
+
+# 3a. Save human–readable summary for the mixed logit estimation
+summary_path = os.path.join(OUTDIR, f"mixed_logit_summary_{stamp}.txt")
+
+with open(summary_path, "w", encoding="utf-8") as f:
+    f.write("MIXED LOGIT MODEL ESTIMATION SUMMARY\n")
+    f.write("=" * 60 + "\n\n")
+
+    # Basic info
+    f.write(f"Timestamp:            {stamp}\n")
+    f.write(f"Number of respondents: {model.n_resp}\n")
+    f.write(f"Number of observations: {model.n_obs}\n")
+    f.write(f"Number of Halton draws (estimation): {model.n_draws}\n\n")
+
+    # Log-likelihood and optimisation status
+    f.write(f"Log-Likelihood at optimum: {-results.fun:.3f}\n")
+    f.write(f"Converged: {results.success}\n")
+    f.write(f"Message:   {results.message}\n\n")
+
+    f.write("Parameter estimates (means and standard deviations)\n")
+    f.write("-" * 60 + "\n")
+    f.write(f"Cost (per 100 CHF):   mu = {mu_cost: .4f},  sigma = {sigma_cost: .4f}\n")
+    f.write(f"Time (per hour):      mu = {mu_time: .4f},  sigma = {sigma_time: .4f}\n")
+    f.write(f"Frequency (per dep):  mu = {mu_freq: .4f},  sigma = {sigma_freq: .4f}\n")
+    f.write(f"ASC Road:             {asc_road: .4f}\n")
+    f.write(f"ASC Other:            {asc_other: .4f}\n\n")
+
+    f.write("Implied willingness-to-pay (WTP)\n")
+    f.write("-" * 60 + "\n")
+    f.write(f"Time:   {wtp['time_h__CHF_per_hour']: .2f} CHF/hour\n")
+    f.write(f"Freq.:  {wtp['freq__CHF_per_departure']: .2f} CHF per additional departure\n\n")
+
+    f.write("Notes:\n")
+    f.write(" - Random coefficients for cost, time and frequency are assumed normal.\n")
+    f.write(" - Halton sequences are used for simulation of random taste draws.\n")
+    f.write(" - Taste draws for the MILP are saved separately in the CSV file.\n")
+
+print(f"\nSummary written to: {summary_path}")
+
