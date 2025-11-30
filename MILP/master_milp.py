@@ -96,7 +96,7 @@ def build_master_problem():
     m.bigM = Param(initialize=big_M_utility)
 
 
-    # MIN_TEU_IM = 10.0
+    # MIN_TEU_IM = 5.0
 
     # def min_teu_im_init(mod, o, d):
     #     total_demand = mod.Demand[o, d]  # if you have this param
@@ -161,7 +161,7 @@ def build_master_problem():
     m.ChoiceNormalization = Constraint(m.OD, m.R, rule=choice_norm_rule)
 
     # Minimum flow if a mode is open (to avoid x=1, y=0)
-    epsilon_f = 1e-3  # or 0.1 TEU if you're in whole-container units
+    epsilon_f = 0.001  # or 0.1 TEU if you're in whole-container units
 
     def min_use_if_open_rule(mod, o, d, mo):
         return mod.f[o, d, mo] >= epsilon_f * mod.x[o, d, mo]
