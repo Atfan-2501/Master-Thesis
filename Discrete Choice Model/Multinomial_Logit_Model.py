@@ -131,7 +131,7 @@ mnl.fit_mle(np.zeros(len(spec)))
 import os, json, pickle, pandas as pd
 from datetime import datetime
 
-OUTDIR = "model_outputs"
+OUTDIR = "Discrete Choice Model/model_outputs"
 os.makedirs(OUTDIR, exist_ok=True)
 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
