@@ -14,7 +14,7 @@ class BendersDecomposition:
         self.iteration = 0
         self.last_logged_iteration = 0
         self.max_iterations = 50
-        self.tolerance = 1e-4
+        self.tolerance = 1e-3
         self.upper_bound = float("inf")
         self.lower_bound = float("-inf")
         self.convergence_data = []
