@@ -146,7 +146,7 @@ SP_COLUMNS = [
 # ------------------------------
 from pathlib import Path
 
-def load_sp_designs(core_path: str = "sp_core_design_blocks.csv", checks_path: str = "sp_checks_design.csv"):
+def load_sp_designs(core_path: str = "../Discrete Choice Model/model_inputs/sp_core_design_blocks.csv", checks_path: str = "../Discrete Choice Model/model_inputs/sp_checks_design.csv"):
     core_p = Path(core_path)
     checks_p = Path(checks_path)
     if not core_p.exists() or not checks_p.exists():
@@ -725,7 +725,7 @@ def main():
             body_html=(
                 "Domestic move, <b>OD 120–180 km</b>, <b>1× 20’ container</b> (general cargo), "
                 "<b>medium urgency</b> (delivery within 24h acceptable). Compare options below. "
-                "<br><i>On-time reliability = % delivered within ±2 hours of promised time.</i>"
+                "<br><i>On-time reliability = % /delivered within ±2 hours of promised time.</i>"
             ),
         )
 

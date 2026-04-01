@@ -14,7 +14,7 @@ class BendersDecomposition:
         self.iteration = 0
         self.last_logged_iteration = 0
         self.max_iterations = 50
-        self.tolerance = 1e-3
+        self.tolerance = 1e-2
         self.upper_bound = float("inf")
         self.lower_bound = float("-inf")
         self.convergence_data = []
@@ -28,9 +28,9 @@ class BendersDecomposition:
         self.subproblem_infeasible_count = 0
 
         # Files
-        self.master_sol_file = "model_output/master_solution_decisions.xlsx"
-        self.ts_input_file = "model_output/TS_Subproblem_Inputs_extended.xlsx"
-        self.benders_cuts_file = "model_output/benders_cuts.xlsx"
+        self.master_sol_file = "../model_output/master_solution_decisions.xlsx"
+        self.ts_input_file = "../model_output/TS_Subproblem_Inputs_extended.xlsx"
+        self.benders_cuts_file = "../model_output/benders_cuts.xlsx"
         
         # Clean previous run artifacts if requested
         if clean_start:
@@ -51,8 +51,8 @@ class BendersDecomposition:
         
         files_to_clean = [
             self.benders_cuts_file,
-            "model_output/benders_convergence.xlsx",
-            "model_output/subproblem_iis.ilp",
+            "../model_output/benders_convergence.xlsx",
+            "../model_output/subproblem_iis.ilp",
         ]
         
         for filepath in files_to_clean:
@@ -722,8 +722,8 @@ class BendersDecomposition:
             print(f"Final relative gap: {relative_gap:.4f}")
 
         conv_df = pd.DataFrame(self.convergence_data)
-        conv_df.to_excel("model_output/benders_convergence.xlsx", index=False)
-        print("Convergence history saved to model_output/benders_convergence.xlsx")
+        conv_df.to_excel("../model_output/benders_convergence.xlsx", index=False)
+        print("Convergence history saved to ../model_output/benders_convergence.xlsx")
 
 
 if __name__ == "__main__":

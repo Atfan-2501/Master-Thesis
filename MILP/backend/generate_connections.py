@@ -8,10 +8,10 @@ import io
 # ============================================================
 
 # Path to your master input file (with OD_Mode_Params)
-MASTER_XLSX = "Input Data/master_problem_inputs_with_taste_draws.xlsx"
+MASTER_XLSX = "../Input Data/master_problem_inputs_with_taste_draws.xlsx"
 
 # Output connections file (Excel)
-OUTPUT_CONNECTIONS_XLSX = "model_output/connections_generated.xlsx"
+OUTPUT_CONNECTIONS_XLSX = "../model_output/connections_generated.xlsx"
 
 # Time discretization: hours per time step in the TS network
 TIME_STEP_HOURS = 1.0

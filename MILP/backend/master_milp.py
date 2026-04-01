@@ -5,7 +5,7 @@ def build_master_problem():
     """Build master problem for Benders decomposition"""
     
     # Load data (same as before)
-    EXCEL_PATH = "Input Data/master_problem_inputs_with_taste_draws.xlsx"
+    EXCEL_PATH = "../Input Data/master_problem_inputs_with_taste_draws.xlsx"
     xls = pd.ExcelFile(EXCEL_PATH)
     sheets = {name: pd.read_excel(EXCEL_PATH, sheet_name=name) for name in xls.sheet_names}
 
@@ -260,5 +260,5 @@ if __name__ == "__main__":
                 })
         
         df_decisions = pd.DataFrame(output_data)
-        df_decisions.to_excel("model_output/master_solution_decisions.xlsx", index=False)
+        df_decisions.to_excel("../model_output/master_solution_decisions.xlsx", index=False)
         print("Solution saved to model_output/master_solution_decisions.xlsx")
