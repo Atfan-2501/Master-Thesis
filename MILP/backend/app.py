@@ -41,15 +41,6 @@ NAME_TO_CODE = {
     "Fribourg": "FRIB",
 }
 
-class UtilityParams(BaseModel):
-    cost_mean: float
-    cost_std: float
-    time_mean: float
-    time_std: float
-    freq_mean: float
-    freq_std: float
-    asc_road: float
-    asc_other: float
 
 def to_code(name: str) -> str:
     """Convert terminal name to code; fallback to original string if unknown."""
@@ -57,14 +48,6 @@ def to_code(name: str) -> str:
         return ""
     return NAME_TO_CODE.get(str(name), str(name))
 
-def compute_wtp(params: UtilityParams) -> dict:
-    # Same convention as your UI: WTP = -beta_attr / beta_cost, scaled by 100 due to "per 100 CHF"
-    if params.cost_mean == 0:
-        return {"time": 0.0, "frequency": 0.0}
-    return {
-        "time": - (params.time_mean / params.cost_mean) * 100.0,
-        "frequency": - (params.freq_mean / params.cost_mean) * 100.0,
-    }
 
 def parse_master(master_path: Path) -> tuple[list, dict]:
     df = pd.read_excel(master_path, sheet_name=0)
@@ -157,34 +140,45 @@ def parse_ts(ts_path: Path) -> dict:
 def health():
     return {"status": "ok"}
 
+class OperationalParams(BaseModel):
+    time_multiplier: float
+    price_multiplier: float
+    freq_multiplier: float
+
 @app.post("/run")
-def run(params: UtilityParams):
-    # 1. Update Input Excel with new parameters
-    # Path to your master input file based on your project structure
+def run(params: OperationalParams):
     input_path = ROOT / "Input Data" / "master_problem_inputs_with_taste_draws.xlsx"
     
     if input_path.exists():
         try:
             wb = load_workbook(input_path)
-            # Update 'Global_Params' or 'OD_Mode_Params' depending on your model structure
-            if "Global_Params" in wb.sheetnames:
-                ws = wb["Global_Params"]
-                # Example: updating specific cells based on your Excel layout
-                ws['B2'] = params.beta_cost
-                ws['B3'] = params.beta_time
-                ws['B4'] = params.beta_freq
+            if "OD_Mode_Params" in wb.sheetnames:
+                ws = wb["OD_Mode_Params"]
+                
+                # Identify column indices (based on your image/data)
+                # t_hours is Col 4, p_max is Col 7, f_max is Col 9
+                for row in range(2, ws.max_row + 1):
+                    # Only update Intermodal rows to see the competitive shift
+                    mode_id = ws.cell(row=row, column=3).value
+                    if mode_id == "Intermodal":
+                        # Apply: New Value = Original * (1 + offset)
+                        # Note: You might want to store original values elsewhere to avoid compound scaling
+                        orig_t = ws.cell(row=row, column=4).value
+                        ws.cell(row=row, column=4).value = orig_t * (1 + params.time_multiplier)
+                        
+                        orig_p = ws.cell(row=row, column=7).value
+                        ws.cell(row=row, column=7).value = orig_p * (1 + params.price_multiplier)
+                        
+                        orig_f = ws.cell(row=row, column=9).value
+                        ws.cell(row=row, column=9).value = orig_f * (1 + params.freq_multiplier)
+                
                 wb.save(input_path)
         except Exception as e:
-            print(f"Warning: Could not update input Excel: {e}")
+            print(f"Excel Update Error: {e}")
 
-    # 2. Trigger the Benders Loop logic
-    # This runs the actual optimization logic you provided in benders_loop.py
-    try:
-        # We call the script as a subprocess to ensure a clean environment for each run
-        # This matches your 'benders_loop.py' logic for solving the MILP
-        subprocess.run(["python", str(ROOT / "backend" / "benders_loop.py")], check=True)
-    except subprocess.CalledProcessError as e:
-        return {"error": f"Optimization loop failed: {str(e)}"}
+    # Trigger Benders Loop
+    subprocess.run(["python", str(ROOT / "backend" / "benders_loop.py")], check=True)
+    
 
     # 3. Read the solved outputs after the loop completes
     master_path = DEFAULT_MASTER
@@ -199,12 +193,9 @@ def run(params: UtilityParams):
     routes, summary = parse_master(master_path)
     ts = parse_ts(ts_path)
     
-    # Calculate WTP using the fresh parameters
-    wtp = compute_wtp(params)
 
     return {
         "routes": routes,
         "summary": summary,
-        "wtp": wtp,
         "ts": ts,
     }
