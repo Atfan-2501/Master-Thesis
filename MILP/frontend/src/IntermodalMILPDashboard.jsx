@@ -26,6 +26,9 @@ function formatCHF(x) { return new Intl.NumberFormat("en-CH").format(Math.round(
 function formatKCHF(x) { return `${((x || 0) / 1000).toFixed(0)}k`; }
 
 export default function IntermodalMILPDashboard() {
+  // --- MOVED INSIDE COMPONENT ---
+  const [mnlParams, setMnlParams] = useState([]);
+  
   const [operationalOffsets, setOperationalOffsets] = useState({
     time_multiplier: 0,
     price_multiplier: 0,
@@ -40,6 +43,20 @@ export default function IntermodalMILPDashboard() {
   const [sortKey, setSortKey] = useState("flow");
 
   const summary = results?.summary;
+
+  // Fetch MNL Parameters on load
+  useEffect(() => {
+    const fetchParams = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/current-parameters");
+        const data = await res.json();
+        if (!data.error) setMnlParams(data);
+      } catch (err) {
+        console.error("Failed to fetch MNL params:", err);
+      }
+    };
+    fetchParams();
+  }, []);
 
   const handleOffsetChange = (param, value) => {
     setOperationalOffsets((prev) => ({ ...prev, [param]: parseFloat(value) }));
@@ -104,6 +121,7 @@ export default function IntermodalMILPDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <aside className="lg:col-span-4 space-y-6">
+            {/* Sensitivity Section */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Settings className="h-5 w-5 text-indigo-600" />
@@ -119,6 +137,7 @@ export default function IntermodalMILPDashboard() {
               />
             </section>
 
+            {/* Filter Section */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Route className="h-5 w-5 text-indigo-600" />
@@ -140,6 +159,22 @@ export default function IntermodalMILPDashboard() {
                     <option value="revenue">Revenue</option>
                   </select>
                 </div>
+              </div>
+            </section>
+
+            {/* MNL Section - Fixed hierarchy */}
+            <section className="rounded-2xl bg-slate-100 p-6 border border-slate-300">
+              <h2 className="text-lg font-bold text-slate-900 mb-2 font-mono uppercase text-xs tracking-widest text-slate-500">Live Behavioral Profile</h2>
+              <p className="text-[10px] text-slate-400 mb-4 uppercase font-bold tracking-tighter">Automated survey calibration • Read-only</p>
+              <div className="space-y-2">
+                {mnlParams.length > 0 ? mnlParams.map((p, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-slate-200 pb-1">
+                    <span className="text-slate-600 font-medium capitalize">{p.parameter.replace('_', ' ')}</span>
+                    <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 rounded">
+                      {typeof p.coef === 'number' ? p.coef.toFixed(4) : p.coef}
+                    </span>
+                  </div>
+                )) : <div className="text-xs text-slate-400 italic">No parameters available...</div>}
               </div>
             </section>
           </aside>
@@ -193,11 +228,11 @@ export default function IntermodalMILPDashboard() {
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-600">
-                        <th className="text-left py-2">Origin</th>
-                        <th className="text-left py-2">Destination</th>
-                        <th className="text-right py-2">Flow</th>
-                        <th className="text-right py-2">Freq</th>
-                        <th className="text-right py-2">Revenue</th>
+                        <th className="text-left py-2 font-semibold">Origin</th>
+                        <th className="text-left py-2 font-semibold">Destination</th>
+                        <th className="text-right py-2 font-semibold">Flow</th>
+                        <th className="text-right py-2 font-semibold">Freq</th>
+                        <th className="text-right py-2 font-semibold">Revenue</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -207,7 +242,7 @@ export default function IntermodalMILPDashboard() {
                           <td className="py-3 font-medium">{r.destination}</td>
                           <td className="py-3 text-right">{Number(r.flow).toFixed(1)}</td>
                           <td className="py-3 text-right">{r.frequency}</td>
-                          <td className="py-3 text-right text-indigo-700">{formatCHF(r.revenue)}</td>
+                          <td className="py-3 text-right text-indigo-700 font-semibold">{formatCHF(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -222,6 +257,7 @@ export default function IntermodalMILPDashboard() {
   );
 }
 
+// ... KPI, ParamBlock, and EmptyState components remain the same ...
 function KPI({ label, value }) {
   return (
     <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-4">

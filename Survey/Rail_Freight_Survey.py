@@ -841,6 +841,19 @@ def main():
 
                 if ok_flat and ok_long:
                     st.success("Thank you! Your response has been recorded.")
+                    
+                    # --- ADD THIS TRIGGER CODE HERE ---
+                    try:
+                        # This tells your FastAPI backend to run the MNL model
+                        backend_url = "http://localhost:8000/recompute-mnl"
+                        import requests
+                        requests.post(backend_url, timeout=1) 
+                    except Exception as e:
+                        # We use a silent pass or warning so the user isn't 
+                        # interrupted if the backend is temporarily down
+                        print(f"Trigger failed: {e}")
+                    # ----------------------------------
+
                     st.session_state.answers = {}
                     st.session_state.page_idx = -1
                 else:

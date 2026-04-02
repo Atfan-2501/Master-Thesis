@@ -52,7 +52,8 @@ def to_code(name: str) -> str:
 def parse_master(master_path: Path) -> tuple[list, dict]:
     df = pd.read_excel(master_path, sheet_name=0)
 
-    # Keep “active” rows only: any positive flow or positive frequency
+    # 2. Filter for Intermodal only and active flows
+    df = df[df["mode"].str.contains("Intermodal", case=False)].copy()
     df = df[(df["TEU_y"] > 0) | (df["frequency_f"] > 0)].copy()
 
     # Compute revenue from price * flow (if price is per TEU)
@@ -145,40 +146,45 @@ class OperationalParams(BaseModel):
     price_multiplier: float
     freq_multiplier: float
 
+
 @app.post("/run")
 def run(params: OperationalParams):
-    input_path = ROOT / "Input Data" / "master_problem_inputs_with_taste_draws.xlsx"
+    base_path = ROOT / "Input Data" / "master_problem_inputs_base.xlsx" 
+    active_path = ROOT / "Input Data" / "master_problem_inputs_with_taste_draws.xlsx"
     
-    if input_path.exists():
-        try:
-            wb = load_workbook(input_path)
-            if "OD_Mode_Params" in wb.sheetnames:
-                ws = wb["OD_Mode_Params"]
-                
-                # Identify column indices (based on your image/data)
-                # t_hours is Col 4, p_max is Col 7, f_max is Col 9
-                for row in range(2, ws.max_row + 1):
-                    # Only update Intermodal rows to see the competitive shift
-                    mode_id = ws.cell(row=row, column=3).value
-                    if mode_id == "Intermodal":
-                        # Apply: New Value = Original * (1 + offset)
-                        # Note: You might want to store original values elsewhere to avoid compound scaling
-                        orig_t = ws.cell(row=row, column=4).value
+    if not base_path.exists():
+        return {"error": "Base input file missing."}
+
+    try:
+        # CRITICAL: Use data_only=True to read formula results instead of strings
+        wb = load_workbook(base_path, data_only=True)
+        
+        if "OD_Mode_Params" in wb.sheetnames:
+            ws = wb["OD_Mode_Params"]
+            
+            for row in range(2, ws.max_row + 1):
+                mode_id = ws.cell(row=row, column=3).value
+                if mode_id == "Intermodal":
+                    try:
+                        # Values are now read as floats even if they were formulas in Excel
+                        orig_t = float(ws.cell(row=row, column=4).value or 0)
                         ws.cell(row=row, column=4).value = orig_t * (1 + params.time_multiplier)
                         
-                        orig_p = ws.cell(row=row, column=7).value
+                        orig_p = float(ws.cell(row=row, column=7).value or 0)
                         ws.cell(row=row, column=7).value = orig_p * (1 + params.price_multiplier)
                         
-                        orig_f = ws.cell(row=row, column=9).value
+                        orig_f = float(ws.cell(row=row, column=9).value or 0)
                         ws.cell(row=row, column=9).value = orig_f * (1 + params.freq_multiplier)
-                
-                wb.save(input_path)
-        except Exception as e:
-            print(f"Excel Update Error: {e}")
+                    except (ValueError, TypeError) as e:
+                        print(f"Skipping row {row} due to invalid data: {e}")
+            
+            # Save to the active file for the solver
+            wb.save(active_path)
+    except Exception as e:
+        print(f"Excel Update Error: {e}")
 
-    # Trigger Benders Loop
+    # Trigger the solver (benders_loop.py)
     subprocess.run(["python", str(ROOT / "backend" / "benders_loop.py")], check=True)
-    
 
     # 3. Read the solved outputs after the loop completes
     master_path = DEFAULT_MASTER
@@ -199,3 +205,25 @@ def run(params: OperationalParams):
         "summary": summary,
         "ts": ts,
     }
+
+@app.post("/recompute-mnl")
+def recompute_mnl():
+    """Trigger the MNL model calculation."""
+    # Define the path to your MNL script
+    mnl_script = ROOT.parent / "Discrete Choice Model" / "Multinomial_Logit_Model.py"
+    
+    try:
+        # Execute the script as a subprocess
+        subprocess.run(["python", str(mnl_script)], check=True)
+        return {"status": "success", "message": "MNL parameters updated."}
+    except subprocess.CalledProcessError as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/current-parameters")
+def get_current_parameters():
+    """Serve the latest MNL parameters to the dashboard."""
+    param_path = ROOT.parent / "Discrete Choice Model" / "model_outputs" / "mnl_parameters.csv"
+    if param_path.exists():
+        df = pd.read_csv(param_path)
+        return df.to_dict(orient="records")
+    return {"error": "Parameters not yet generated."}

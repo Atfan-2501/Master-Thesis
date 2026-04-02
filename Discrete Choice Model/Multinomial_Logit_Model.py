@@ -2,11 +2,22 @@ import pandas as pd
 import numpy as np
 import pylogit as pl
 from collections import OrderedDict
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 print("Loading data...")
-df_wide = pd.read_csv("synthetic_responses_intermodal_CH_100.csv")
-core = pd.read_csv("sp_core_design_blocks.csv")
-checks = pd.read_csv("sp_checks_design.csv")
+
+# Define paths relative to the script location
+# Using / ensures compatibility across Windows and Linux
+responses_path = SCRIPT_DIR / "model_inputs" / "synthetic_responses_intermodal_CH_100.csv"
+core_path      = SCRIPT_DIR / "model_inputs" / "sp_core_design_blocks.csv"
+checks_path    = SCRIPT_DIR / "model_inputs" / "sp_checks_design.csv"
+
+# Load the data frames
+df_wide = pd.read_csv(responses_path)
+core    = pd.read_csv(core_path)
+checks  = pd.read_csv(checks_path)
 
 sp_cols = [c for c in df_wide.columns if c.startswith("SP_Task")]
 df_wide = df_wide.copy()
@@ -131,7 +142,7 @@ mnl.fit_mle(np.zeros(len(spec)))
 import os, json, pickle, pandas as pd
 from datetime import datetime
 
-OUTDIR = "Discrete Choice Model/model_outputs"
+OUTDIR = SCRIPT_DIR/"model_outputs"
 os.makedirs(OUTDIR, exist_ok=True)
 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
