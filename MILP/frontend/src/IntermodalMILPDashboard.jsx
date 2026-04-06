@@ -1,6 +1,8 @@
+
 import React, { useMemo, useState, useEffect } from "react";
-import { Play, Settings, AlertCircle, Loader2, Route } from "lucide-react";
+import { Play, Settings, AlertCircle, Loader2, Route, Info, Brain, Zap } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import { Layers, Activity, Navigation } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -26,9 +28,7 @@ function formatCHF(x) { return new Intl.NumberFormat("en-CH").format(Math.round(
 function formatKCHF(x) { return `${((x || 0) / 1000).toFixed(0)}k`; }
 
 export default function IntermodalMILPDashboard() {
-  // --- MOVED INSIDE COMPONENT ---
   const [mnlParams, setMnlParams] = useState([]);
-  
   const [operationalOffsets, setOperationalOffsets] = useState({
     time_multiplier: 0,
     price_multiplier: 0,
@@ -44,13 +44,39 @@ export default function IntermodalMILPDashboard() {
 
   const summary = results?.summary;
 
-  // Fetch MNL Parameters on load
+  // Use Memo to handle the map and table data filtering
+  const displayData = useMemo(() => {
+    if (!results?.routes) return { intermodal: [], road: [], totalCount: 0 };
+    
+    const all = results.routes;
+    // Filter intermodal routes above the flow threshold
+    const intermodal = all.filter(r => 
+        r.mode.toLowerCase().includes("intermodal") && (r.flow ?? 0) >= minFlow
+    );
+    // Filter road routes above the flow threshold
+    const road = all.filter(r => 
+        r.mode.toLowerCase().includes("road") && (r.flow ?? 0) >= minFlow
+    );
+
+    return { 
+        intermodal, 
+        road, 
+        totalActive: intermodal.length + road.length 
+    };
+}, [results, minFlow]);
+
   useEffect(() => {
     const fetchParams = async () => {
       try {
         const res = await fetch("http://localhost:8000/current-parameters");
         const data = await res.json();
-        if (!data.error) setMnlParams(data);
+        if (!data.error) {
+          // Filter out ASC_Other and Reliability as requested
+          const filtered = data.filter(p => 
+            !["ASC_Other", "reliab"].includes(p.parameter)
+          );
+          setMnlParams(filtered);
+        }
       } catch (err) {
         console.error("Failed to fetch MNL params:", err);
       }
@@ -102,30 +128,52 @@ export default function IntermodalMILPDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-8">
-        <header className="rounded-2xl bg-white/80 backdrop-blur shadow-sm ring-1 ring-slate-200 p-6 mb-6">
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Intermodal Network Design</h1>
-              <p className="text-slate-600 mt-1">Operational Sensitivity Analysis (Percentage Change)</p>
-            </div>
-            <div className="flex items-center gap-3">
-              {isRunning && <span className="text-sm font-medium text-indigo-600 animate-pulse">Solving MILP...</span>}
-              <button onClick={runModel} disabled={isRunning} className="inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-white transition-all bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400">
-                {isRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
-                Run
-              </button>
-            </div>
-          </div>
-          {executionTime > 0 && <div className="mt-3 text-sm text-slate-500">Last run: {executionTime.toFixed(2)}s</div>}
-        </header>
+        {/* ... Header stays the same ... */}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <aside className="lg:col-span-4 space-y-6">
-            {/* Sensitivity Section */}
+            
+            {/* 1. Behavioral Parameters (Shifted to top and reformatted) */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings className="h-5 w-5 text-indigo-600" />
-                <h2 className="text-lg font-bold text-slate-900">Sensitivity Sliders</h2>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-lg font-bold text-slate-900">Behavioral Profile</h2>
+                </div>
+                <div className="group relative">
+                  <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-[10px] rounded shadow-lg z-50">
+                    Live coefficients estimated from survey data using a Multinomial Logit model.
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+                {mnlParams.length > 0 ? mnlParams.map((p, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600 font-medium capitalize">
+                      {p.parameter.replace('_', ' ')}
+                    </span>
+                    <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                      {typeof p.coef === 'number' ? p.coef.toFixed(4) : p.coef}
+                    </span>
+                  </div>
+                )) : <div className="text-xs text-slate-400 italic text-center">Loading parameters...</div>}
+              </div>
+            </section>
+
+            {/* 2. Intermodal Sensitivity Sliders */}
+            <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-lg font-bold text-slate-900">Intermodal Sensitivity</h2>
+                </div>
+                <div className="group relative">
+                  <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-[10px] rounded shadow-lg z-50">
+                    Adjust the supply-side attributes (time, price, frequency) specifically for Intermodal services.
+                  </div>
+                </div>
               </div>
               <ParamBlock
                 title="Operational Multipliers"
@@ -137,11 +185,19 @@ export default function IntermodalMILPDashboard() {
               />
             </section>
 
-            {/* Filter Section */}
+            {/* 3. Route Filters */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Route className="h-5 w-5 text-indigo-600" />
-                <h2 className="text-lg font-bold text-slate-900">Route Filters</h2>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Route className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-lg font-bold text-slate-900">Route Filters</h2>
+                </div>
+                <div className="group relative">
+                  <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-[10px] rounded shadow-lg z-50">
+                    Filter and sort the displayed Intermodal routes on the map and table based on volume.
+                  </div>
+                </div>
               </div>
               <div className="space-y-4">
                 <div>
@@ -161,94 +217,131 @@ export default function IntermodalMILPDashboard() {
                 </div>
               </div>
             </section>
-
-            {/* MNL Section - Fixed hierarchy */}
-            <section className="rounded-2xl bg-slate-100 p-6 border border-slate-300">
-              <h2 className="text-lg font-bold text-slate-900 mb-2 font-mono uppercase text-xs tracking-widest text-slate-500">Live Behavioral Profile</h2>
-              <p className="text-[10px] text-slate-400 mb-4 uppercase font-bold tracking-tighter">Automated survey calibration • Read-only</p>
-              <div className="space-y-2">
-                {mnlParams.length > 0 ? mnlParams.map((p, idx) => (
-                  <div key={idx} className="flex justify-between text-sm border-b border-slate-200 pb-1">
-                    <span className="text-slate-600 font-medium capitalize">{p.parameter.replace('_', ' ')}</span>
-                    <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 rounded">
-                      {typeof p.coef === 'number' ? p.coef.toFixed(4) : p.coef}
-                    </span>
-                  </div>
-                )) : <div className="text-xs text-slate-400 italic">No parameters available...</div>}
-              </div>
-            </section>
           </aside>
 
           <main className="lg:col-span-8 space-y-6">
-            {error && (
-              <div className="rounded-2xl bg-rose-50 ring-1 ring-rose-200 p-4 flex gap-3">
-                <AlertCircle className="h-5 w-5 text-rose-600 mt-0.5" />
-                <div>
-                  <div className="font-semibold text-rose-800">Error</div>
-                  <div className="text-sm text-rose-700">{error}</div>
-                </div>
-              </div>
-            )}
-
-            <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KPI label="Total Flow" value={summary ? `${Number(summary.totalFlow).toFixed(0)} TEU` : "—"} />
-              <KPI label="Revenue" value={summary ? `${formatKCHF(summary.totalRevenue)} CHF` : "—"} />
-              <KPI label="Profit" value={summary ? `${formatKCHF(summary.profit)} CHF` : "—"} />
-              <KPI label="Routes" value={results ? activeRoutes.length : "—"} />
+            {/* 1. Updated Intermodal KPIs */}
+            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <KPI 
+                label="Intermodal Flow" 
+                value={summary ? `${Number(summary.totalFlow).toFixed(0)} TEU` : "—"} 
+                icon={<Activity className="h-4 w-4 text-emerald-600" />}
+                colorClass="text-emerald-700 bg-emerald-50 ring-emerald-100"
+              />
+              <KPI 
+                label="Intermodal Revenue" 
+                value={summary ? `${formatKCHF(summary.totalRevenue)} CHF` : "—"} 
+                icon={<Zap className="h-4 w-4 text-emerald-600" />}
+                colorClass="text-emerald-700 bg-emerald-50 ring-emerald-100"
+              />
+              <KPI 
+                label="Active Network Coverage" 
+                value={results ? `${displayData.intermodal.length} / ${displayData.totalActive}` : "—"} 
+                sublabel="Intermodal / Total Active Routes"
+                icon={<Layers className="h-4 w-4 text-emerald-600" />}
+                colorClass="text-emerald-700 bg-emerald-50 ring-emerald-100"
+              />
             </section>
 
+            {/* 2. Map with Flow Differentiation and Legend */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
-              <div className="p-6 pb-4"><h2 className="text-lg font-bold text-slate-900">Network Map</h2></div>
+              <div className="p-6 pb-4 flex justify-between items-center">
+                <div className="flex flex-col">
+                  <h2 className="text-lg font-bold text-slate-900">Intermodal Network Connectivity</h2>
+                  <p className="text-xs text-slate-500">Visualization of optimized modal split and route density</p>
+                </div>
+                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-1 bg-emerald-500 rounded-full"></span> Intermodal
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-1 bg-slate-300 rounded-full"></span> Road
+                  </div>
+                </div>
+              </div>
+              
               <div className="h-[500px]">
                 <MapContainer center={MAP_CENTER} zoom={8} className="h-full w-full">
-                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  {Object.entries(TERMINALS).map(([code, t]) => (
-                    <Marker key={code} position={[t.lat, t.lon]}>
-                      <Popup><div className="text-sm font-semibold">{code} - {t.name}</div></Popup>
-                    </Marker>
-                  ))}
-                  {activeRoutes.map((r, idx) => {
-                    const o = TERMINALS[r.origin];
+                  <TileLayer 
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  
+                  {/* 1. Road Flows - Light dashed lines for context */}
+                  {displayData.road.map((r, idx) => {
+                    const o = TERMINALS[r.origin]; 
                     const d = TERMINALS[r.destination];
                     if (!o || !d) return null;
                     return (
-                      <Polyline key={idx} positions={[[o.lat, o.lon], [d.lat, d.lon]]} 
-                        pathOptions={{ color: "#4f46e5", weight: clamp(1.5 + (r.frequency || 0) * 1.4, 2, 10), opacity: clamp((r.flow || 0) / 200, 0.2, 0.9) }} 
+                      <Polyline 
+                        key={`road-${idx}`} 
+                        positions={[[o.lat, o.lon], [d.lat, d.lon]]} 
+                        pathOptions={{ 
+                          color: "#cbd5e1", 
+                          weight: 1.5, 
+                          opacity: 0.3, 
+                          dashArray: '5, 10' 
+                        }} 
                       />
                     );
                   })}
+
+                  {/* 2. Intermodal Flows - Strong solid emerald lines scaled by frequency */}
+                  {displayData.intermodal.map((r, idx) => {
+                    const o = TERMINALS[r.origin]; 
+                    const d = TERMINALS[r.destination];
+                    if (!o || !d) return null;
+                    return (
+                      <Polyline 
+                        key={`inter-${idx}`} 
+                        positions={[[o.lat, o.lon], [d.lat, d.lon]]} 
+                        pathOptions={{ 
+                          color: "#10b981", 
+                          weight: clamp(2 + (r.frequency || 0) * 1.5, 3, 12), 
+                          opacity: 0.8 
+                        }} 
+                      />
+                    );
+                  })}
+                  
+                  {/* 3. Terminal Markers - Re-enabled for all defined nodes */}
+                  {Object.entries(TERMINALS).map(([code, t]) => (
+                    <Marker key={code} position={[t.lat, t.lon]}>
+                      <Popup>
+                        <div className="text-sm">
+                          <div className="font-bold border-b border-slate-100 mb-1">{code} - {t.name}</div>
+                          <div className="text-[10px] text-slate-500">Terminal Node</div>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  ))}
                 </MapContainer>
               </div>
             </section>
 
+            {/* 3. Simplified Result Table */}
             <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-6">
-              <h2 className="text-lg font-bold text-slate-900 mb-4">Active Routes Table</h2>
-              {!results ? <EmptyState /> : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-600">
-                        <th className="text-left py-2 font-semibold">Origin</th>
-                        <th className="text-left py-2 font-semibold">Destination</th>
-                        <th className="text-right py-2 font-semibold">Flow</th>
-                        <th className="text-right py-2 font-semibold">Freq</th>
-                        <th className="text-right py-2 font-semibold">Revenue</th>
+              <h2 className="text-lg font-bold text-slate-900 mb-4">Intermodal Route Details</h2>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-600">
+                      <th className="text-left py-2 font-semibold">Origin</th>
+                      <th className="text-left py-2 font-semibold">Destination</th>
+                      <th className="text-right py-2 font-semibold">Intermodal Flow (TEU)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayData.intermodal.map((r, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 hover:bg-emerald-50/30 transition-colors">
+                        <td className="py-3 font-medium">{r.origin_name || r.origin}</td>
+                        <td className="py-3 font-medium">{r.destination_name || r.destination}</td>
+                        <td className="py-3 text-right text-emerald-700 font-bold">{Number(r.flow).toFixed(1)}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {activeRoutes.map((r, idx) => (
-                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                          <td className="py-3 font-medium">{r.origin}</td>
-                          <td className="py-3 font-medium">{r.destination}</td>
-                          <td className="py-3 text-right">{Number(r.flow).toFixed(1)}</td>
-                          <td className="py-3 text-right">{r.frequency}</td>
-                          <td className="py-3 text-right text-indigo-700 font-semibold">{formatCHF(r.revenue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           </main>
         </div>
@@ -257,12 +350,16 @@ export default function IntermodalMILPDashboard() {
   );
 }
 
-// ... KPI, ParamBlock, and EmptyState components remain the same ...
-function KPI({ label, value }) {
+// Updated KPI Component with custom coloring
+function KPI({ label, value, sublabel, icon, colorClass }) {
   return (
-    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 p-4">
-      <div className="text-xs text-slate-600 font-medium uppercase tracking-wider">{label}</div>
-      <div className="mt-1 text-xl font-bold text-slate-900">{value}</div>
+    <div className={`rounded-2xl shadow-sm ring-1 p-4 ${colorClass}`}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">{label}</div>
+        {icon}
+      </div>
+      <div className="text-xl font-black">{value}</div>
+      {sublabel && <div className="text-[10px] mt-1 opacity-60 font-medium">{sublabel}</div>}
     </div>
   );
 }

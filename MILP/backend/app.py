@@ -52,8 +52,8 @@ def to_code(name: str) -> str:
 def parse_master(master_path: Path) -> tuple[list, dict]:
     df = pd.read_excel(master_path, sheet_name=0)
 
-    # 2. Filter for Intermodal only and active flows
-    df = df[df["mode"].str.contains("Intermodal", case=False)].copy()
+    # Filter for BOTH Intermodal and Road active flows
+    df = df[df["mode"].str.contains("Intermodal|Road", case=False)].copy()
     df = df[(df["TEU_y"] > 0) | (df["frequency_f"] > 0)].copy()
 
     # Compute revenue from price * flow (if price is per TEU)
