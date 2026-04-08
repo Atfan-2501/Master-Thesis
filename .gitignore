@@ -1,7 +1,6 @@
 .vscode/
 __pycache__/
 cache
-requirements.txt
 /MILP/Input Data/
 /MILP/Results
 /MILP/model_output
