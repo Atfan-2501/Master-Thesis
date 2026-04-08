@@ -6,6 +6,7 @@ const FIREBASE_API_KEY = "AIzaSyD5KhzNL7kedVGj2IwIWbQNeytvV67r8RI";
 const FIREBASE_PROJECT_ID = "survey-ea041";
 const COLLECTION = "ch_intermodal_survey_rows";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // ─── SP Design Data (from Streamlit survey_schema, Section 7) ───────────────
 const SP_TASKS = [
   { tNum: 1, road: { cost: 450, time: 12, reliability: 90, departures: 6 }, intermodal: { cost: 600, time: 18, reliability: 95, departures: 4 }, isCheck: false, checkType: null },
@@ -420,7 +421,7 @@ export default function RailFreightSurvey() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       // Optional: trigger backend recompute
-      fetch("http://localhost:8000/recompute-mnl", { method: "POST" }).catch(() => {});
+      fetch(API_BASE_URL, { method: "POST" }).catch(() => {});
       setSubmitted(true);
     } catch (err) {
       console.error(err);
