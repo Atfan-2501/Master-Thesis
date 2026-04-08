@@ -1,0 +1,21 @@
+# Web Framework & Server
+fastapi
+uvicorn
+python-multipart
+
+# Data Processing
+pandas
+openpyxl
+numpy
+
+# Choice Modeling (MNL/Mixed Logit)
+biogeme
+
+# Database & Integration
+firebase-admin
+requests
+
+# Optimization
+pyomo
+# Note: Ensure an open-source solver like 'glpk' or 'cbc' 
+# is installed on your cloud environment if Gurobi is unavailable.
