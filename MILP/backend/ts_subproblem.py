@@ -9,7 +9,7 @@ def solve_ts_subproblem(master_solution):
     """
     
     # Load TS data
-    TS_XLSX = "model_output/TS_Subproblem_Inputs_extended.xlsx"
+    TS_XLSX = "../model_output/TS_Subproblem_Inputs_extended.xlsx"
     ts_nodes = pd.read_excel(TS_XLSX, sheet_name="TS_Nodes")
     ts_arcs = pd.read_excel(TS_XLSX, sheet_name="TS_Arcs")
     train_groups = pd.read_excel(TS_XLSX, sheet_name="Train_Groups")
@@ -387,7 +387,7 @@ def compute_minimal_infeasible_set(model, solver):
                         )
             
             # Write IIS to file for debugging
-            iis_file = "model_output/subproblem_iis.ilp"
+            iis_file = "../model_output/subproblem_iis.ilp"
             gurobi_model.write(iis_file)
             print(f"   IIS written to {iis_file}")
             
@@ -498,7 +498,7 @@ def save_subproblem_results(model, master_solution, ts_arcs_df, train_groups_df)
     od_summary_df = pd.DataFrame(od_summary_data)
     
     # Save to Excel
-    output_file = "model_output/TS_Subproblem_Solution.xlsx"
+    output_file = "../model_output/TS_Subproblem_Solution.xlsx"
     with pd.ExcelWriter(output_file) as writer:
         arc_flows_df.to_excel(writer, sheet_name='Arc_Flows', index=False)
         od_summary_df.to_excel(writer, sheet_name='OD_Summary', index=False)

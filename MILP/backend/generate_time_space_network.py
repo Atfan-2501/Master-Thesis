@@ -5,9 +5,9 @@ import math
 # CONFIG
 # ============================================================
 
-CONNECTIONS_XLSX = "model_output/connections_generated.xlsx"
-TIMETABLE_XLSX = "Input Data/HUPAC Timetable.xlsx"
-OUTPUT_TS_XLSX = "model_output/TS_Subproblem_Inputs_extended.xlsx"
+CONNECTIONS_XLSX = "../model_output/connections_generated.xlsx"
+TIMETABLE_XLSX = "../Input Data/HUPAC Timetable.xlsx"
+OUTPUT_TS_XLSX = "../model_output/TS_Subproblem_Inputs_extended.xlsx"
 
 NUM_TIME_STEPS = 168
 TIME_STEP_HOURS = 1.0

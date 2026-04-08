@@ -146,7 +146,7 @@ SP_COLUMNS = [
 # ------------------------------
 from pathlib import Path
 
-def load_sp_designs(core_path: str = "sp_core_design_blocks.csv", checks_path: str = "sp_checks_design.csv"):
+def load_sp_designs(core_path: str = "../Discrete Choice Model/model_inputs/sp_core_design_blocks.csv", checks_path: str = "../Discrete Choice Model/model_inputs/sp_checks_design.csv"):
     core_p = Path(core_path)
     checks_p = Path(checks_path)
     if not core_p.exists() or not checks_p.exists():
@@ -725,7 +725,7 @@ def main():
             body_html=(
                 "Domestic move, <b>OD 120–180 km</b>, <b>1× 20’ container</b> (general cargo), "
                 "<b>medium urgency</b> (delivery within 24h acceptable). Compare options below. "
-                "<br><i>On-time reliability = % delivered within ±2 hours of promised time.</i>"
+                "<br><i>On-time reliability = % /delivered within ±2 hours of promised time.</i>"
             ),
         )
 
@@ -841,6 +841,19 @@ def main():
 
                 if ok_flat and ok_long:
                     st.success("Thank you! Your response has been recorded.")
+                    
+                    # --- ADD THIS TRIGGER CODE HERE ---
+                    try:
+                        # This tells your FastAPI backend to run the MNL model
+                        backend_url = "http://localhost:8000/recompute-mnl"
+                        import requests
+                        requests.post(backend_url, timeout=1) 
+                    except Exception as e:
+                        # We use a silent pass or warning so the user isn't 
+                        # interrupted if the backend is temporarily down
+                        print(f"Trigger failed: {e}")
+                    # ----------------------------------
+
                     st.session_state.answers = {}
                     st.session_state.page_idx = -1
                 else:

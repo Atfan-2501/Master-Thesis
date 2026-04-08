@@ -5,7 +5,7 @@ def build_master_problem():
     """Build master problem for Benders decomposition"""
     
     # Load data (same as before)
-    EXCEL_PATH = "Input Data/master_problem_inputs_with_taste_draws.xlsx"
+    EXCEL_PATH = "../Input Data/master_problem_inputs_with_taste_draws.xlsx"
     xls = pd.ExcelFile(EXCEL_PATH)
     sheets = {name: pd.read_excel(EXCEL_PATH, sheet_name=name) for name in xls.sheet_names}
 
@@ -96,13 +96,13 @@ def build_master_problem():
     m.bigM = Param(initialize=big_M_utility)
 
 
-    # MIN_TEU_IM = 5.0
+    MIN_TEU_IM = 10
 
-    # def min_teu_im_init(mod, o, d):
-    #     total_demand = mod.Demand[o, d]  # if you have this param
-    #     return min(MIN_TEU_IM, total_demand)  # don't force more than exists
+    def min_teu_im_init(mod, o, d):
+        total_demand = mod.Demand[o, d]  # if you have this param
+        return min(MIN_TEU_IM, total_demand)  # don't force more than exists
 
-    # m.MinTEU_IM = Param(m.OD,initialize=min_teu_im_init,within=NonNegativeReals)
+    m.MinTEU_IM = Param(m.OD,initialize=min_teu_im_init,within=NonNegativeReals)
 
     # Variables
     m.x = Var(m.OD, m.MODES, domain=Binary)
@@ -139,14 +139,37 @@ def build_master_problem():
         return mod.y[o, d, mo] <= mod.Demand[o, d] * mod.x[o, d, mo]
     m.FlowActivation = Constraint(m.OD, m.MODES, rule=flow_activation_rule)
 
-    # ✅ FIX 3: Ensure positive frequency when flow exists
-    # If y > 0, then f >= f_min (via x=1 and FreqLB)
-    # This is implicitly handled by FreqLB + FlowActivation, but we can add explicit link:
-    def freq_when_flow_rule(mod, o, d, mo):
-        # If y > epsilon, then x must be 1, which forces f >= f_min
-        # This is already handled by FlowActivation, so this is redundant but safe
-        return Constraint.Skip  # Already covered by FlowActivation + FreqLB
-    m.FreqWhenFlow = Constraint(m.OD, m.MODES, rule=freq_when_flow_rule)
+    # ============================================================
+    # NEW CONSTRAINTS: PREVENT x=1 WITH ZERO FLOW OR FREQUENCY
+    # ============================================================
+    
+    # # CHANGE 1: If service is open (x=1), frequency must be positive
+    # # This prevents x=1, f=0
+    # def min_freq_if_open_rule(mod, o, d, mo):
+    #     """If x=1, then f >= small epsilon (prevents x=1, f=0)"""
+    #     epsilon_f = 0.001  # Minimum frequency if open (very small)
+    #     return mod.f[o, d, mo] >= epsilon_f * mod.x[o, d, mo]
+    # m.MinFreqIfOpen = Constraint(m.OD, m.MODES, rule=min_freq_if_open_rule)
+
+    # # CHANGE 2: If service is open (x=1), flow must be positive
+    # # This prevents x=1, y=0
+    # def min_flow_if_open_rule(mod, o, d, mo):
+    #     """If x=1, then y >= small epsilon (prevents x=1, y=0)"""
+    #     epsilon_y = 0.1  # Minimum flow if open (0.1 TEU/week)
+    #     return mod.y[o, d, mo] >= epsilon_y * mod.x[o, d, mo]
+    # m.MinFlowIfOpen = Constraint(m.OD, m.MODES, rule=min_flow_if_open_rule)
+
+
+    # CHANGE 4: NEW - Minimum capacity utilization requirement
+    # If service is open, must use at least MIN_UTIL% of total weekly capacity
+    MIN_CAPACITY_UTILIZATION = 0.1  # 15% minimum utilization
+    
+    def min_capacity_utilization_rule(mod, o, d, mo):
+        
+        min_util_flow = MIN_CAPACITY_UTILIZATION * mod.cap_per_dep[o, d, mo] * mod.x[o, d, mo]
+        return mod.y[o, d, mo] >= min_util_flow
+    
+    m.MinCapacityUtilization = Constraint(m.OD, m.MODES, rule=min_capacity_utilization_rule)
 
     # --- SAA demand allocation ---
     def demand_alloc_rule(mod, o, d, mo):
@@ -160,13 +183,7 @@ def build_master_problem():
         return sum(mod.w[o, d, r, mo] for mo in mod.MODES) == 1
     m.ChoiceNormalization = Constraint(m.OD, m.R, rule=choice_norm_rule)
 
-    # Minimum flow if a mode is open (to avoid x=1, y=0)
-    epsilon_f = 0.001  # or 0.1 TEU if you're in whole-container units
-
-    def min_use_if_open_rule(mod, o, d, mo):
-        return mod.f[o, d, mo] >= epsilon_f * mod.x[o, d, mo]
-
-    m.MinUseIfOpen = Constraint(m.OD, m.MODES, rule=min_use_if_open_rule)
+    #Minimum Intermodal Flow
 
     # def min_im_flow_if_open_rule(mod, o, d):
     #     if ("Intermodal" not in mod.MODES):
@@ -174,8 +191,6 @@ def build_master_problem():
     #     return mod.y[o, d, "Intermodal"] >= mod.MinTEU_IM[o, d] * mod.x[o, d, "Intermodal"]
 
     # m.MinIMFlowIfOpen = Constraint(m.OD, rule=min_im_flow_if_open_rule)
-
-    # --- Argmax linearization ---
     def argmax_rule(mod, o, d, r, mo1, mo2):
         if mo1 == mo2:
             return Constraint.Skip
@@ -237,11 +252,13 @@ if __name__ == "__main__":
             for mo in m.MODES:
                 output_data.append({
                     "origin": o, "destination": d, "mode": mo,
-                    "x_open": value(m.x[o, d, mo]), "frequency_f": value(m.f[o, d, mo]),
-                    "price_p": value(m.p[o, d, mo]), "TEU_y": value(m.y[o, d, mo]),
+                    "x_open": value(m.x[o, d, mo]), 
+                    "frequency_f": value(m.f[o, d, mo]),
+                    "price_p": value(m.p[o, d, mo]), 
+                    "TEU_y": value(m.y[o, d, mo]),
                     "cap_per_dep_TEU": value(m.cap_per_dep[o, d, mo])
                 })
         
         df_decisions = pd.DataFrame(output_data)
-        df_decisions.to_excel("model_output/master_solution_decisions.xlsx", index=False)
+        df_decisions.to_excel("../model_output/master_solution_decisions.xlsx", index=False)
         print("Solution saved to model_output/master_solution_decisions.xlsx")
