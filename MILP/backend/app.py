@@ -1,10 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
 import pandas as pd
 import subprocess
 from openpyxl import load_workbook
+from firebase_config import initialize_firebase # Reuse your existing helper
+import os
 
 app = FastAPI(title="Intermodal MILP API")
 
@@ -211,17 +213,21 @@ def run(params: OperationalParams):
     }
 
 @app.post("/recompute-mnl")
-def recompute_mnl():
-    """Trigger the MNL model calculation."""
-    # Define the path to your MNL script
-    mnl_script = ROOT.parent / "Discrete Choice Model" / "Multinomial_Logit_Model.py"
-    
+async def recompute_mnl():
     try:
-        # Execute the script as a subprocess
-        subprocess.run(["python", str(mnl_script)], check=True)
-        return {"status": "success", "message": "MNL parameters updated."}
-    except subprocess.CalledProcessError as e:
-        return {"status": "error", "message": str(e)}
+        # 1. Pull latest data from Firestore
+        db = initialize_firebase()
+        docs = db.collection("ch_intermodal_survey_rows").stream()
+        
+        # 2. Run the modified MNL script
+        script_path = os.path.abspath("../Discrete Choice Model/Multinomial_Logit_Model.py")
+        result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    
+        if result.returncode != 0:
+            return {"status": "error", "logs": result.stderr}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/current-parameters")
 def get_current_parameters():
@@ -231,3 +237,4 @@ def get_current_parameters():
         df = pd.read_csv(param_path)
         return df.to_dict(orient="records")
     return {"error": "Parameters not yet generated."}
+

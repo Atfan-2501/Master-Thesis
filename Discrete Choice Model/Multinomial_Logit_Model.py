@@ -3,6 +3,7 @@ import numpy as np
 import pylogit as pl
 from collections import OrderedDict
 from pathlib import Path
+import openpyxl
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -10,7 +11,17 @@ print("Loading data...")
 
 # Define paths relative to the script location
 # Using / ensures compatibility across Windows and Linux
+# Multinomial_Logit_Model.py - Around Line 15
+live_results_path = SCRIPT_DIR / "model_inputs" / "live_survey_results.csv"
 responses_path = SCRIPT_DIR / "model_inputs" / "synthetic_responses_intermodal_CH_100.csv"
+
+# Load live data if it exists, otherwise fallback to synthetic
+if live_results_path.exists():
+    print("Loading live survey data for estimation...")
+    df_wide = pd.read_csv(live_results_path)
+else:
+    print("Loading synthetic baseline data...")
+    df_wide = pd.read_csv(responses_path)
 core_path      = SCRIPT_DIR / "model_inputs" / "sp_core_design_blocks.csv"
 checks_path    = SCRIPT_DIR / "model_inputs" / "sp_checks_design.csv"
 
@@ -182,6 +193,8 @@ def get_coef(name):
     col = "coef" if "coef" in coef_df.columns else "coef."
     return float(coef_df.loc[idx[0], col])
 
+
+
 beta_cost = get_coef("cost_100")
 beta_time = get_coef("time_h")
 beta_rel  = get_coef("reliab")
@@ -193,6 +206,37 @@ wtp = {
     "reliab__CHF_per_unit_0to1":   - (beta_rel  / beta_cost) * 100.0, # per +100%-pts
     "freq__CHF_per_departure_day": - (beta_freq / beta_cost) * 100.0,
 }
+
+
+def update_milp_excel_params(betas):
+    excel_path = SCRIPT_DIR.parent / "MILP" / "Input Data" / "master_problem_inputs_with_taste_draws.xlsx"
+    
+    # Prepare dataframe for Excel
+    # Mapping Biogeme/Pylogit names to Dashboard Parameter names
+    param_mapping = {
+        "cost_100": "beta_cost",
+        "time_h": "beta_time",
+        "reliab": "beta_reliability",
+        "ASC_Road": "ASC_Road"
+    }
+    
+    update_data = []
+    for bio_name, dash_name in param_mapping.items():
+        val = get_coef(bio_name)
+        # Convert cost_100 back to per-unit cost if dashboard expects standard beta_cost
+        if bio_name == "cost_100": val = val / 100 
+        update_data.append({"Parameter": dash_name, "Value": val})
+    
+    df_new_params = pd.DataFrame(update_data)
+    
+    # Write to specific sheet
+    with pd.ExcelWriter(excel_path, mode='a', if_sheet_exists='replace', engine='openpyxl') as writer:
+        df_new_params.to_excel(writer, sheet_name='DCM_Params', index=False)
+    print(f"Successfully updated MILP parameters in {excel_path.name}")
+
+# Execute the update after estimation
+update_milp_excel_params(coef_df)
+
 
 wtp_path = os.path.join(OUTDIR, f"mnl_wtp_{stamp}.json")
 with open(wtp_path, "w", encoding="utf-8") as f:
