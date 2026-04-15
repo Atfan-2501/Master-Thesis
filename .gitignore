@@ -7,3 +7,5 @@ cache
 
 /Discrete Choice Model/model_inputs
 /Discrete Choice Model/model_outputs
+
+/MILP/model_output
